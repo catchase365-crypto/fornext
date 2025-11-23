@@ -1,0 +1,452 @@
+<!-- START OF FILE: 4x4_Master_Cube.html -->
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>四阶天机 - 镇宅版</title>
+    <style>
+        body {
+            margin: 0; overflow: hidden; background-color: #050505;
+            font-family: "Microsoft YaHei", sans-serif; user-select: none;
+        }
+        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; z-index: 10; }
+        h1 { 
+            margin: 0; color: #d4af37; letter-spacing: 6px; font-size: 32px; font-weight: bold;
+            text-shadow: 0 4px 20px rgba(0,0,0,1);
+            background: linear-gradient(to bottom, #ffd700, #aa8800);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        p { font-size: 13px; color: #886b4b; margin: 5px 0 0 0; letter-spacing: 2px; font-weight: 300; }
+
+        .controls {
+            position: absolute; bottom: 40px; width: 100%;
+            display: flex; justify-content: center; gap: 25px;
+            pointer-events: auto; z-index: 20;
+        }
+        button {
+            background: rgba(10, 10, 10, 0.85); backdrop-filter: blur(12px);
+            border: 1px solid #705040; color: #e0c080;
+            padding: 14px 36px; font-size: 15px; border-radius: 30px; 
+            cursor: pointer; transition: 0.3s; text-transform: uppercase; letter-spacing: 2px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6); outline: none; font-weight: bold;
+        }
+        button:hover { background: #2e2018; border-color: #ffd700; color: #fff; transform: translateY(-2px); }
+        button:active { transform: scale(0.96); }
+        
+        #victory-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            pointer-events: none; opacity: 0; transition: opacity 0.6s ease; z-index: 50;
+            background: rgba(0,0,0,0.92);
+        }
+        #victory-overlay.show { opacity: 1; pointer-events: auto; }
+        .win-text {
+            font-size: 72px; font-weight: 300; color: #d4af37; font-family: serif;
+            text-shadow: 0 0 50px rgba(212, 175, 55, 0.6); letter-spacing: 12px;
+            border-top: 1px solid #d4af37; border-bottom: 1px solid #d4af37; 
+            padding: 40px 0; margin-bottom: 40px;
+        }
+
+        #sound-menu {
+            position: absolute; bottom: 110px; left: 50%;
+            transform: translateX(-50%) scale(0);
+            background: rgba(20, 12, 8, 0.98);
+            border: 1px solid #5c4033; padding: 20px; border-radius: 12px;
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+            transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: auto; width: 360px; z-index: 30;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.9); transform-origin: bottom center;
+        }
+        #sound-menu.open { transform: translateX(-50%) scale(1); }
+        .sound-item {
+            background: #1a100b; padding: 12px 8px; border-radius: 6px;
+            text-align: center; color: #aa8866; font-size: 13px;
+            cursor: pointer; border: 1px solid transparent; transition: 0.2s;
+        }
+        .sound-item.active { background: #5c4033; color: #fff; border-color: #d4af37; }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/geometries/RoundedBoxGeometry.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+</head>
+<body>
+
+    <div id="ui">
+        <h1>四阶天机</h1>
+        <p>Inner Core Locked · Surface Sliding</p>
+    </div>
+
+    <div id="victory-overlay">
+        <div class="win-text">大道至简</div>
+        <div style="display:flex; gap:20px;">
+            <button onclick="event.stopPropagation(); game.reset()">归位</button>
+            <button onclick="event.stopPropagation(); game.shuffle()">再破一阵</button>
+        </div>
+    </div>
+
+    <div id="sound-menu">
+        <div class="sound-item" onclick="audioMgr.set('mech')">⚙️ 机械</div>
+        <div class="sound-item active" onclick="audioMgr.set('wood')">🪵 沉香</div>
+        <div class="sound-item" onclick="audioMgr.set('stone')">🪨 磐石</div>
+        <div class="sound-item" onclick="audioMgr.set('glass')">🍷 琉璃</div>
+        <div class="sound-item" onclick="audioMgr.set('mute')">🔇 静音</div>
+    </div>
+
+    <div class="controls">
+        <button onclick="event.stopPropagation(); toggleMenu()">🎵 听觉</button>
+        <button onclick="event.stopPropagation(); game.shuffle()">🔀 乱阵</button>
+    </div>
+
+<script>
+/* 1. 音频 (增加厚重感) */
+class SoundEngine {
+    constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.type = 'wood'; 
+    }
+    init() { if(this.ctx.state==='suspended') this.ctx.resume(); }
+    set(key) { this.type=key; this.init(); this.play(); document.getElementById('sound-menu').classList.remove('open'); }
+    play() {
+        if(this.type==='mute') return;
+        this.init(); const t=this.ctx.currentTime;
+        const osc=this.ctx.createOscillator(); const g=this.ctx.createGain();
+        osc.connect(g); g.connect(this.ctx.destination);
+        
+        if(this.type==='wood') {
+            osc.type='sine'; osc.frequency.setValueAtTime(80,t); osc.frequency.exponentialRampToValueAtTime(30,t+0.15);
+            g.gain.setValueAtTime(0.8,t); g.gain.exponentialRampToValueAtTime(0.01,t+0.2);
+            osc.start(t); osc.stop(t+0.2);
+        } else if (this.type==='stone') {
+            // 石头摩擦碰撞声
+            osc.type='triangle'; osc.frequency.setValueAtTime(150,t); osc.frequency.linearRampToValueAtTime(50,t+0.1);
+            g.gain.setValueAtTime(0.6,t); g.gain.exponentialRampToValueAtTime(0.01,t+0.15);
+            osc.start(t); osc.stop(t+0.15);
+        } else {
+            osc.frequency.setValueAtTime(200,t); g.gain.exponentialRampToValueAtTime(0.01,t+0.1);
+            osc.start(t); osc.stop(t+0.1);
+        }
+    }
+    playWin() {
+        if(this.type==='mute')return; this.init(); const t=this.ctx.currentTime;
+        [130,196,261,392].forEach((f,i)=>{
+            const o=this.ctx.createOscillator();const g=this.ctx.createGain();o.connect(g).connect(this.ctx.destination);
+            o.frequency.value=f; g.gain.setValueAtTime(0,t+i*0.3);g.gain.linearRampToValueAtTime(0.2,t+i*0.3+0.1);g.gain.exponentialRampToValueAtTime(0.001,t+i*0.3+4);
+            o.start(t+i*0.3);o.stop(t+i*0.3+4.5);
+        });
+    }
+}
+const audioMgr = new SoundEngine();
+
+/* 2. 纹理工厂 */
+const TextureFactory = {
+    cache: {},
+    // 创建外层木头纹理
+    createWood: function(colorHex) {
+        if(this.cache[colorHex]) return this.cache[colorHex];
+        const size = 512; const canvas = document.createElement('canvas'); canvas.width=size; canvas.height=size;
+        const ctx = canvas.getContext('2d');
+        const col = new THREE.Color(colorHex);
+        
+        // 底色
+        ctx.fillStyle = `rgb(${col.r*160}, ${col.g*160}, ${col.b*160})`; ctx.fillRect(0,0,size,size);
+        // 木纹
+        ctx.globalAlpha = 0.1; ctx.fillStyle='#000';
+        for(let i=0;i<5000;i++) ctx.fillRect(Math.random()*size,Math.random()*size,Math.random()*60+20,1);
+        ctx.globalAlpha = 1.0;
+        
+        // 包金边框
+        const r=60; const p=20;
+        ctx.beginPath(); ctx.moveTo(p+r,p); ctx.arcTo(size-p,p,size-p,size-p,r); ctx.arcTo(size-p,size-p,p,size-p,r); ctx.arcTo(p,size-p,p,p,r); ctx.arcTo(p,p,size-p,p,r);
+        ctx.lineWidth=30; ctx.strokeStyle='#d4af37'; ctx.stroke();
+        // 细线
+        ctx.lineWidth=4; ctx.strokeStyle='#ffe082'; ctx.strokeRect(60,60,size-120,size-120);
+
+        const tex = new THREE.CanvasTexture(canvas); tex.anisotropy=4;
+        this.cache[colorHex] = tex; return tex;
+    },
+    // 创建内层核心纹理 (黑金曜石)
+    createObsidian: function() {
+        if(this.cache['obsidian']) return this.cache['obsidian'];
+        const size = 512; const canvas = document.createElement('canvas'); canvas.width=size; canvas.height=size;
+        const ctx = canvas.getContext('2d');
+        
+        // 黑色岩石底
+        ctx.fillStyle = '#080808'; ctx.fillRect(0,0,size,size);
+        // 噪点
+        for(let i=0;i<10000;i++) {
+            ctx.fillStyle = Math.random()>0.8 ? '#333' : '#111';
+            ctx.fillRect(Math.random()*size,Math.random()*size, 4, 4);
+        }
+        // 金色裂纹 (能量感)
+        ctx.strokeStyle = '#a88d32'; ctx.lineWidth=3; ctx.globalAlpha=0.6;
+        ctx.beginPath();
+        for(let i=0;i<10;i++) {
+            ctx.moveTo(Math.random()*size, Math.random()*size);
+            ctx.lineTo(Math.random()*size, Math.random()*size);
+        }
+        ctx.stroke();
+        
+        // 符文印记
+        ctx.globalAlpha=0.3; ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+        ctx.strokeRect(100,100,312,312); 
+        ctx.beginPath(); ctx.arc(256,256,80,0,Math.PI*2); ctx.stroke();
+
+        const tex = new THREE.CanvasTexture(canvas);
+        this.cache['obsidian'] = tex; return tex;
+    }
+};
+
+/* 3. 游戏核心 */
+class CoreGame {
+    constructor() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x050505);
+        this.scene.fog = new THREE.FogExp2(0x050505, 0.03);
+
+        // 相机拉远一点，因为4x4体积大
+        this.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+        this.camera.position.set(8, 7, 9); 
+        
+        // 高性能渲染
+        this.renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, powerPreference:"high-performance"});
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.3; // 稍微调亮
+        document.body.appendChild(this.renderer.domElement);
+
+        // 灯光
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const spot = new THREE.SpotLight(0xffeeb1, 1.8);
+        spot.position.set(10, 15, 10); spot.castShadow = true;
+        spot.shadow.mapSize.width = 2048; spot.shadow.mapSize.height = 2048;
+        this.scene.add(spot);
+        const blueRim = new THREE.PointLight(0x4466ff, 0.6); blueRim.position.set(-8, 0, -8); this.scene.add(blueRim);
+
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+
+        this.blocks = [];
+        this.gap = new THREE.Vector3();
+        this.animating = false;
+        
+        // 材质准备
+        this.initMaterials();
+        this.initLevel();
+        
+        // 交互
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        window.addEventListener('pointerup', e => this.onClick(e));
+        window.addEventListener('resize', ()=>{
+            this.camera.aspect = window.innerWidth/window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        this.animate();
+    }
+
+    initMaterials() {
+        const colors = { U:0xe6e6e6, D:0xffd700, R:0xb90000, L:0xff5900, F:0x009e60, B:0x0045ad, IN:0x1a120b };
+        this.mats = {};
+        // 外层材质
+        for(let k in colors) {
+            const t = TextureFactory.createWood(colors[k]);
+            this.mats[k] = new THREE.MeshStandardMaterial({map:t, roughness:0.2, metalness:0.1});
+        }
+        // 内层镇物材质 (黑金)
+        const obs = TextureFactory.createObsidian();
+        this.coreMat = new THREE.MeshStandardMaterial({
+            map: obs, color: 0xffffff,
+            roughness: 0.8, metalness: 0.5, 
+            bumpMap: obs, bumpScale: 0.05
+        });
+    }
+
+    initLevel() {
+        // 清理
+        this.blocks.forEach(b => this.scene.remove(b.mesh));
+        this.blocks = []; // 存放可移动方块
+        if(this.fixedGroup) this.scene.remove(this.fixedGroup);
+        this.fixedGroup = new THREE.Group(); // 存放不可移动的内核
+        this.scene.add(this.fixedGroup);
+
+        const geo = new THREE.RoundedBoxGeometry(0.94, 0.94, 0.94, 4, 0.1);
+        
+        // 4x4x4 循环：坐标从 0 到 3
+        // 为了居中，我们需要偏移：0->-1.5, 1->-0.5, 2->0.5, 3->1.5
+        const offset = 1.5;
+
+        for(let z=0; z<4; z++) {
+            for(let y=0; y<4; y++) {
+                for(let x=0; x<4; x++) {
+                    // 物理坐标
+                    const px = x - offset;
+                    const py = y - offset;
+                    const pz = z - offset;
+
+                    // 1. 判断是否是核心 (中间 2x2x2)
+                    // 索引 1 和 2 是中间
+                    const isInner = (x>=1 && x<=2) && (y>=1 && y<=2) && (z>=1 && z<=2);
+
+                    if (isInner) {
+                        // 创建【镇物】(Fixed Core)
+                        const mesh = new THREE.Mesh(geo, this.coreMat);
+                        mesh.position.set(px, py, pz);
+                        mesh.castShadow = true; mesh.receiveShadow = true;
+                        // 稍微缩小一点点，增加层次感
+                        mesh.scale.set(0.98, 0.98, 0.98);
+                        this.fixedGroup.add(mesh);
+                        // 核心不加入 this.blocks，所以不可点击
+                    } else {
+                        // 2. 判断是否是缺口
+                        // 我们设定 (3,3,3) 为初始缺口
+                        if (x===3 && y===3 && z===3) {
+                            this.gap.set(px, py, pz);
+                            continue;
+                        }
+
+                        // 3. 创建可移动方块 (Shell)
+                        // 确定颜色: 面向外部的用彩色，面向内部的用深色
+                        const mats = [
+                            x===3 ? this.mats.R : this.mats.IN, // Right
+                            x===0 ? this.mats.L : this.mats.IN, // Left
+                            y===3 ? this.mats.U : this.mats.IN, // Up
+                            y===0 ? this.mats.D : this.mats.IN, // Down
+                            z===3 ? this.mats.F : this.mats.IN, // Front
+                            z===0 ? this.mats.B : this.mats.IN  // Back
+                        ];
+                        
+                        const mesh = new THREE.Mesh(geo, mats);
+                        mesh.position.set(px, py, pz);
+                        mesh.castShadow = true; mesh.receiveShadow = true;
+                        this.scene.add(mesh);
+                        
+                        this.blocks.push({
+                            mesh: mesh,
+                            solved: new THREE.Vector3(px, py, pz) // 记录正确位置
+                        });
+                    }
+                }
+            }
+        }
+        
+        // 给核心加一个微弱的内发光，增加神秘感
+        const coreLight = new THREE.PointLight(0xffaa00, 1, 5);
+        coreLight.position.set(0,0,0);
+        this.scene.add(coreLight);
+    }
+
+    onClick(e) {
+        if(document.getElementById('victory-overlay').classList.contains('show')) return;
+        if(e.target.closest('button') || e.target.closest('#sound-menu')) return;
+        if(this.animating) return;
+
+        this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+
+        // 只能点到 movable blocks，点不到 fixedGroup
+        const intersects = this.raycaster.intersectObjects(this.blocks.map(b=>b.mesh));
+
+        if(intersects.length > 0) {
+            const blk = this.blocks.find(b => b.mesh === intersects[0].object);
+            if(blk) this.move(blk);
+        }
+    }
+
+    move(blk) {
+        // 检查距离：曼哈顿距离是否为 1 (即相邻)
+        const dist = blk.mesh.position.distanceTo(this.gap);
+        
+        // 允许误差 0.1
+        if(dist > 0.9 && dist < 1.1) {
+            // 【关键逻辑】: 
+            // 因为 gap 始终在外层 (初始在外层，移动逻辑保证只能跟外层交换)，
+            // 而 blk 也是外层方块。
+            // 所以只要相邻，就可以移动。
+            // 核心(Fixed)占据了内部位置，但Gap永远不会出现在内部位置，所以不用担心方块移进核心。
+            
+            audioMgr.set('wood'); // 播放声音
+            this.animating = true;
+            
+            const targetPos = this.gap.clone();
+            this.gap.copy(blk.mesh.position); // 更新缺口位置
+            
+            new TWEEN.Tween(blk.mesh.position).to(targetPos, 120)
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .onComplete(() => {
+                    this.animating = false;
+                    this.checkWin();
+                }).start();
+        } else {
+            // 撞击到墙壁或不可移动的声音
+            if(dist < 2.5) audioMgr.set('stone'); 
+        }
+    }
+
+    reset() {
+        TWEEN.removeAll();
+        this.animating = false;
+        document.getElementById('victory-overlay').classList.remove('show');
+        this.initLevel();
+    }
+
+    shuffle() {
+        this.reset();
+        // 随机游走打乱：保证有解
+        let steps = 80; // 步数要多一点，因为4x4
+        const run = () => {
+            if(steps <= 0) return;
+            
+            // 找到所有与 Gap 相邻的方块
+            const neighbors = this.blocks.filter(b => b.mesh.position.distanceTo(this.gap) < 1.1);
+            if(neighbors.length > 0) {
+                const r = neighbors[Math.floor(Math.random() * neighbors.length)];
+                // 瞬移交换
+                const temp = this.gap.clone();
+                this.gap.copy(r.mesh.position);
+                r.mesh.position.copy(temp);
+            }
+            steps--;
+            setTimeout(run, 10); // 快速打乱
+        };
+        run();
+    }
+
+    checkWin() {
+        if(this.animating) return;
+        let win = true;
+        for(let b of this.blocks) {
+            if(b.mesh.position.distanceTo(b.solved) > 0.05) {
+                win = false; break;
+            }
+        }
+        if(win) {
+            document.getElementById('victory-overlay').classList.add('show');
+            audioMgr.playWin();
+        }
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        TWEEN.update();
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+function toggleMenu() { document.getElementById('sound-menu').classList.toggle('open'); }
+
+const game = new CoreGame();
+</script>
+</body>
+</html>
